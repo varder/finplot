@@ -31,6 +31,10 @@ def download_price_history(symbol='XBTUSD', start_time='2020-01-10', end_time='2
             data[col] += d[col]
     df = pd.DataFrame(data)
     df = df.rename(columns={'t':'time', 'o':'open', 'c':'close', 'h':'high', 'l':'low', 'v':'volume'})
+    # print(str(df.set_index('time')))
+    # f = open("anal1.txt", "a")
+    # f.write(str(df.set_index('time')))
+    # f.close()
     return df.set_index('time')
 
 

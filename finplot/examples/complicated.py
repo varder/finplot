@@ -81,11 +81,11 @@ class BinanceFutureWebsocket:
             print('websocket subscribe error:', type(e), e)
             raise e
 
-    def on_message(self, *args, **kwargs):
+    def on_message(self, ws, msg):
         df = self.df
         if df is None:
             return
-        msg = json.loads(args[-1])
+        msg = json.loads(msg)
         if 'stream' not in msg:
             return
         stream = msg['stream']
@@ -259,7 +259,6 @@ def change_asset(*args, **kwargs):
 
     symbol = ctrl_panel.symbol.currentText()
     interval = ctrl_panel.interval.currentText()
-    ws.close()
     ws.df = None
     df = load_price_history(symbol, interval=interval)
     ws.reconnect(symbol, interval, df)

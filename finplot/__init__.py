@@ -9,10 +9,10 @@ Zoom does something similar to what you'd normally expect for financial data,
 where the Y-axis is auto-scaled to highest high and lowest low in the active
 region.
 '''
-
+import traceback
 from ast import literal_eval
 from collections import OrderedDict, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
 from functools import partial, partialmethod
 from math import ceil, floor, fmod
@@ -28,9 +28,13 @@ from pyqtgraph import QtCore, QtGui
 ColorMap = pg.ColorMap
 
 # module definitions, mostly colors
-legend_border_color = '#777'
-legend_fill_color   = '#6668'
-legend_text_color   = '#ddd6'
+# legend_border_color = '#000000dd'
+legend_border_color = '#525d65dd'
+# legend_fill_color   = '#00000055'
+legend_fill_color = '#1C1C1Fbb'
+# legend_text_color   = '#dddddd66'
+legend_text_color = '#0DAE29'
+
 soft_colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
 hard_colors = ['#000000', '#772211', '#000066', '#555555', '#0022cc', '#ffcc00']
 colmap_clash = ColorMap([0.0, 0.2, 0.6, 1.0], [[127, 127, 255, 51], [0, 0, 127, 51], [255, 51, 102, 51], [255, 178, 76, 51]])
@@ -63,9 +67,8 @@ cache_candle_factor = 3 # factor extra candles rendered to buffer
 y_pad = 0.03 # 3% padding at top and bottom of autozoom plots
 y_label_width = 65
 long_time = 2*365*24*60*60*1e9
-display_timezone = datetime.now(timezone.utc).astimezone().tzinfo  # default to local
+display_timezone = None  # default to local
 winx,winy,winw,winh = 400,300,800,400
-log_plot_offset = -2.2222222e-16 # I could file a bug report, probably in PyQt, but this is more fun
 
 app = None
 windows = [] # no gc
@@ -131,26 +134,11 @@ class YAxisItem(pg.AxisItem):
         self.hide_strings = False
         self.style['autoExpandTextSpace'] = False
         self.style['autoReduceTextSpace'] = False
-        self.next_fmt = '%g'
-
-    def tickValues(self, minVal, maxVal, size):
-        vs = super().tickValues(minVal, maxVal, size)
-        if len(vs) < 3:
-            return vs
-        xform = self.vb.yscale.xform
-        gs = ['%g'%xform(v) for v in vs[2][1]]
-        maxdec = max([len((g).partition('.')[2].partition('e')[0]) for g in gs])
-        if any(['e' in g for g in gs]):
-            self.next_fmt = '%%.%ig' % maxdec
-        else:
-            self.next_fmt = '%%.%if' % maxdec
-        return vs
 
     def tickStrings(self, values, scale, spacing):
         if self.hide_strings:
             return []
-        xform = self.vb.yscale.xform
-        return [self.next_fmt%xform(value) for value in values]
+        return ['%g'%self.vb.yscale.xform(value) for value in values]
 
 
 
@@ -246,7 +234,7 @@ class PandasDataSource:
 
     @property
     def xlen(self):
-        return len(self.df)
+        return len(self.df)+right_margin_candles
 
     def calc_significant_decimals(self):
         ser = self.z if len(self.scale_cols)>1 else self.y
@@ -329,7 +317,7 @@ class PandasDataSource:
         input_df = self.post_update(input_df)
         input_df = input_df.reset_index()
         self.df = input_df[[input_df.columns[0]]+orig_cols] if orig_cols else input_df
-        self.init_x1 = self.xlen + right_margin_candles - side_margin
+        self.init_x1 = self.xlen - side_margin
         self.cache_hilo = OrderedDict()
         self._period = None
 
@@ -645,7 +633,6 @@ class FinViewBox(pg.ViewBox):
         self.v_zoom_scale = v_zoom_scale
         self.master_viewbox = None
         self.rois = []
-        self.win._isMouseLeftDrag = False
         self.reset()
 
     def reset(self):
@@ -665,7 +652,6 @@ class FinViewBox(pg.ViewBox):
         self.updating_linked = False
         self.set_datasrc(None)
         self.setMouseEnabled(x=True, y=False)
-        self.setRange(QtCore.QRectF(pg.Point(0, 0), pg.Point(1, 1)))
 
     def set_datasrc(self, datasrc):
         self.datasrc = datasrc
@@ -726,10 +712,6 @@ class FinViewBox(pg.ViewBox):
         '''Ctrl+LButton draw lines.'''
         if ev.modifiers() != QtCore.Qt.ControlModifier:
             super().mouseDragEvent(ev, axis)
-            if ev.isFinish():
-                self.win._isMouseLeftDrag = False
-            else:
-                self.win._isMouseLeftDrag = True
             if ev.isFinish() or self.drawing:
                 self.refresh_all_y_zoom()
             if not self.drawing:
@@ -862,7 +844,7 @@ class FinViewBox(pg.ViewBox):
         tr = self.targetRect()
         x1 = tr.right() + steps
         startx = -side_margin
-        endx = self.datasrc.xlen + right_margin_candles - side_margin
+        endx = self.datasrc.xlen - side_margin
         if x1 > endx:
             x1 = endx
         x0 = x1 - tr.width()
@@ -890,11 +872,9 @@ class FinViewBox(pg.ViewBox):
             tr = self.targetRect()
             x0 = tr.left()
             x1 = tr.right()
-            if x1-x0 <= 1:
-                return
         # make edges rigid
         xl = max(_round(x0-side_margin)+side_margin, -side_margin)
-        xr = min(_round(x1-side_margin)+side_margin, datasrc.xlen+right_margin_candles-side_margin)
+        xr = min(_round(x1-side_margin)+side_margin, datasrc.xlen-side_margin)
         dxl = xl-x0
         dxr = xr-x1
         if dxl > 0:
@@ -902,7 +882,7 @@ class FinViewBox(pg.ViewBox):
         if dxr < 0:
             x0 += dxr
         x0 = max(_round(x0-side_margin)+side_margin, -side_margin)
-        x1 = min(_round(x1-side_margin)+side_margin, datasrc.xlen+right_margin_candles-side_margin)
+        x1 = min(_round(x1-side_margin)+side_margin, datasrc.xlen-side_margin)
         # fetch hi-lo and set range
         _,_,hi,lo,cnt = datasrc.hilo(x0, x1)
         vr = self.viewRect()
@@ -1098,7 +1078,7 @@ class HeatmapItem(FinPlotItem):
         values = df.values
         # normalize
         values -= np.nanmin(values)
-        values = values / (np.nanmax(values) / (1+self.whiteout)) # overshoot for coloring
+        values /= np.nanmax(values) / (1+self.whiteout) # overshoot for coloring
         lim = self.filter_limit * (1+self.whiteout)
         p = self.painter
         for t,row in enumerate(values):
@@ -1149,7 +1129,7 @@ class HorizontalTimeVolumeItem(CandlestickItem):
         volumes = (volumes * f / divvol).T
         p = self.painter
         h = 1e-10
-        for i in range(len(prices)):
+        for i in self.datasrc.df.index:
             prcr = prices[i]
             prv = prcr[~np.isnan(prcr)]
             if len(prv) > 1:
@@ -1510,10 +1490,8 @@ def plot(x, y=None, color=None, width=1, ax=None, style=None, legend=None, zooms
     _set_datasrc(ax, datasrc)
     if legend is not None:
         _create_legend(ax)
-    x = datasrc.x if not ax.vb.x_indexed else datasrc.index
+    x = datasrc.x if datasrc.standalone or not ax.vb.x_indexed else datasrc.index
     y = datasrc.y / ax.vb.yscale.scalef
-    if ax.vb.yscale.scaletype == 'log':
-        y = y + log_plot_offset
     if style is None or any(ch in style for ch in '-_.'):
         connect_dots = 'finite' # same as matplotlib; use datasrc.standalone=True if you want to keep separate intervals on a plot
         item = ax.plot(x, y, pen=_makepen(color=used_color, style=style, width=width), name=legend, connect=connect_dots)
@@ -1741,6 +1719,7 @@ def refresh():
 
 
 def show(qt_exec=True):
+
     refresh()
     for win in windows:
         if isinstance(win, FinWindow) or qt_exec:
@@ -1808,7 +1787,6 @@ def _loadwindata(win):
                 x0,x1 = ds.x.loc[ds.x>=kvs['min_x']].index[0], ds.x.loc[ds.x<=kvs['max_x']].index[-1]
                 if x1 == len(ds.x)-1:
                     x1 += right_margin_candles
-                x1 += 0.5
                 zoom_set = vb.update_y_zoom(x0, x1)
     return zoom_set
 
@@ -1998,7 +1976,7 @@ def _update_significants(ax, datasrc, force):
     if force or (default_dec and default_eps):
         try:
             sd,se = datasrc.calc_significant_decimals()
-            if sd or se != significant_eps:
+            if sd:
                 if force or default_dec or sd > ax.significant_decimals:
                     ax.significant_decimals = sd
                 if force or default_eps or se < ax.significant_eps:
@@ -2081,11 +2059,6 @@ def _set_datasrc(ax, datasrc, addcols=True):
     else:
         viewbox.standalones.add(datasrc)
         datasrc.update_init_x(viewbox.init_steps)
-        if datasrc.timebased() and viewbox.datasrc is not None:
-            ## print('WARNING: re-indexing standalone, time-based plot')
-            vdf = viewbox.datasrc.df
-            d = {v:k for k,v in enumerate(vdf[vdf.columns[0]])}
-            datasrc.df.index = [d[i] for i in datasrc.df[datasrc.df.columns[0]]]
         ## if not viewbox.x_indexed:
             ## _set_x_limits(ax, datasrc)
     # update period if this datasrc has higher time resolution
@@ -2231,14 +2204,12 @@ def _update_gfx(item):
         i.datasrc.set_df(df_clipped)
         break
     update_sigdig = False
-    if not item.datasrc.standalone and not item.ax.vb.win._isMouseLeftDrag:
+    if not item.datasrc.standalone:
         # new limits when extending/reducing amount of data
         x_min,x1 = _set_x_limits(item.ax, item.datasrc)
         # scroll all plots if we're at the far right
         tr = item.ax.vb.targetRect()
         x0 = x1 - tr.width()
-        if x0 < right_margin_candles + side_margin:
-            x0 = -side_margin
         if tr.right() < x1 - 5 - 2*right_margin_candles:
             x0 = x1 = None
         prev_top = item.ax.vb.targetRect().top()
@@ -2259,10 +2230,7 @@ def _start_visual_update(item):
         item.ax.removeItem(item)
         item.dirty = True
     else:
-        y = item.datasrc.y
-        if item.ax.vb.yscale.scaletype == 'log':
-            y = y + log_plot_offset
-        item.setData(item.datasrc.index, y)
+        item.setData(item.datasrc.index, item.datasrc.y)
 
 
 def _end_visual_update(item):
@@ -2281,11 +2249,11 @@ def _xminmax(datasrc, x_indexed, init_steps=None, extra_margin=0):
     if x_indexed and init_steps:
         # initial zoom
         x0 = max(datasrc.xlen-init_steps, 0) - side_margin - extra_margin
-        x1 = datasrc.xlen + right_margin_candles + side_margin + extra_margin
+        x1 = datasrc.xlen - side_margin + extra_margin
     elif x_indexed:
         # total x size for indexed data
         x0 = -side_margin - extra_margin
-        x1 = datasrc.xlen + right_margin_candles - 1 + side_margin + extra_margin # add another margin to get the "snap back" sensation
+        x1 = datasrc.xlen - 1 + side_margin + right_margin_candles + extra_margin# add another margin to get the "snap back" sensation
     else:
         # x size for plain Y-over-X data (i.e. not indexed)
         x0 = datasrc.x.min()
@@ -2304,7 +2272,12 @@ def _repaint_candles():
         for item in list(ax.items):
             if isinstance(item, FinPlotItem):
                 _start_visual_update(item)
-                _end_visual_update(item)
+                # _end_visual_update(item)
+                try:
+                    _end_visual_update(item)
+                except Exception as e:
+                    print(f"Go this shit {e}")
+                    traceback.print_tb(e.__traceback__)
 
 
 def _paint_scatter(item, p, *args):
@@ -2433,7 +2406,7 @@ def _get_color(ax, style, wanted_color):
 def _pdtime2epoch(t):
     if isinstance(t, pd.Series):
         if isinstance(t.iloc[0], pd.Timestamp):
-            return t.view('int64')
+            return t.astype('int64')
         h = np.nanmax(t.values)
         if h < 1e10: # handle s epochs
             return (t*1e9).astype('int64')
@@ -2447,7 +2420,7 @@ def _pdtime2epoch(t):
 
 def _pdtime2index(ax, ts, any_end=False, require_time=False):
     if isinstance(ts.iloc[0], pd.Timestamp):
-        ts = ts.view('int64')
+        ts = ts.astype('int64')
     else:
         h = np.nanmax(ts.values)
         if h < 1e7:
@@ -2686,7 +2659,7 @@ def _makepen(color, style=None, width=1):
 
 
 def _round(v):
-    return floor(v+0.5)
+    return ceil(v-0.5)
 
 
 try:

@@ -4,3 +4,17 @@ build/
 dumb/
 *.egg-info/
 screenshot.png
+
+.idea/finplot.iml
+
+.idea/inspectionProfiles/profiles_settings.xml
+
+.idea/inspectionProfiles/Project_Default.xml
+
+.idea/misc.xml
+
+.idea/modules.xml
+
+.idea/
+
+finplot/examples/smp.txt

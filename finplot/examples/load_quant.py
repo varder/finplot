@@ -9,7 +9,7 @@ from time import time
 
 # load data and convert date
 end_t = int(time()) 
-start_t = end_t - 12*30*24*60*60*2 # twelve months
+start_t = end_t - 12*30*24*60*60*14 # twelve months
 symbol = 'SPY'
 symbol = 'AMD'
 interval = '1d'
@@ -30,8 +30,8 @@ macd = df.Close.ewm(span=12).mean() - df.Close.ewm(span=26).mean()
 signal = macd.ewm(span=9).mean()
 df['macd_diff'] = macd - signal
 fplt.volume_ocv(df[['Date','Open','Close','macd_diff']], ax=ax2, colorfunc=fplt.strength_colorfilter)
-fplt.plot(macd, ax=ax2, legend='MACD')
-fplt.plot(signal, ax=ax2, legend='Signal')
+# fplt.plot(macd, ax=ax2, legend='MACD')
+# fplt.plot(signal, ax=ax2, legend='Signal')
 
 # change to b/w coloring templates for next plots
 fplt.candle_bull_color = fplt.candle_bear_color = '#000'
@@ -40,10 +40,10 @@ fplt.candle_bull_body_color = fplt.volume_bull_body_color = '#fff'
 
 # plot price and volume
 fplt.candlestick_ochl(df[['Date','Open','Close','High','Low']], ax=ax)
-hover_label = fplt.add_legend('', ax=ax)
-axo = ax.overlay()
-fplt.volume_ocv(df[['Date','Open','Close','Volume']], ax=axo)
-fplt.plot(df.Volume.ewm(span=24).mean(), ax=axo, color=1)
+# hover_label = fplt.add_legend('', ax=ax)
+# axo = ax.overlay()
+# fplt.volume_ocv(df[['Date','Open','Close','Volume']], ax=axo)
+# fplt.plot(df.Volume.ewm(span=24).mean(), ax=axo, color=1)
 
 #######################################################
 ## update crosshair and legend when moving the mouse ##

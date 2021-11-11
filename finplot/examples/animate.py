@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 
-FPS = 30
+FPS = 0.1
 anim_counter = 0
 spots = None
 labels_plot = None
@@ -65,16 +65,19 @@ def move_view(ax, df):
     fplt.set_x_pos(df.index[int(x-w)], df.index[int(x+w)], ax=ax)
     anim_counter += 1
 
-
 def animate(ax, ax2, df):
+    animate.counter += 1
+    print(animate.counter)
     gen_spots(ax, df)
     gen_labels(ax2, df)
     move_view(ax, df)
 
+animate.counter = 0
 
 df = gen_dumb_price()
 ax,ax2 = fplt.create_plot('Things move', rows=2, init_zoom_periods=100, maximize=False)
 df.plot(kind='candle', ax=ax)
 df[['open','close','volume']].plot(kind='volume', ax=ax2)
+
 fplt.timer_callback(lambda: animate(ax, ax2, df), 1/FPS)
 fplt.show()
